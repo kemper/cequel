@@ -77,16 +77,21 @@ module Cequel
       end
 
       def def_finder(method_prefix, column_names, scope_operation = '')
-        arg_names = column_names.join(', ')
         method_suffix = finder_method_suffix(column_names)
-        column_filter_expr = column_names
-          .map { |name| "#{name}: #{name}" }.join(', ')
+        method_name = "#{method_prefix}_#{method_suffix}"
 
-        singleton_class.module_eval(<<-RUBY, __FILE__, __LINE__+1)
-          def #{method_prefix}_#{method_suffix}(#{arg_names})
-            where(#{column_filter_expr})#{scope_operation}
+        return if self.respond_to?(method_name)
+        singleton_class.send(:define_method, "#{method_name}") do |*args|
+          query = {}.tap {|h| column_names.each_with_index {|c, i| h[c] = args[i] } }
+          scope = where(query)
+          if scope_operation == ".first"
+            scope.first
+          elsif scope_operation == ".entries"
+            scope.entries
+          else
+            scope
           end
-        RUBY
+        end
       end
 
       def undef_key_finders(method_prefix)
