@@ -19,17 +19,36 @@ describe Cequel::Metal::DataSet do
       column :visits, :counter
       column :tweets, :counter
     end
+    cequel.schema.create_table(:legacy_posts) do
+      key :"Blog_subdomain.column", :text
+      key :"Permalink.column", :text
+      column :"Title.column", :text
+      column :"Body.column", :text
+      column :"Published_at.column", :timestamp
+      list :"Categories.column", :text
+      set :"Tags.column", :text
+      map :"Trackbacks.column", :timestamp, :text
+    end
+    cequel.schema.create_table(:legacy_post_activity) do
+      key :"Blog_subdomain.column", :text
+      key :"Permalink.column", :text
+      column :"Visits.column", :counter
+      column :"Tweets.column", :counter
+    end
   end
 
   after :each do
     subdomains = cequel[:posts].select(:blog_subdomain).
       map { |row| row[:blog_subdomain] }
     cequel[:posts].where(blog_subdomain: subdomains).delete if subdomains.any?
+    cequel[:legacy_posts].where(:"Blog_subdomain.column" => "blog_subdomain").delete
+    cequel[:legacy_post_activity].where(:"Blog_subdomain.column" => "blog_subdomain").delete
   end
 
   after :all do
     cequel.schema.drop_table(:posts)
     cequel.schema.drop_table(:post_activity)
+    cequel.schema.drop_table(:legacy_posts)
   end
 
   let(:row_keys) { {blog_subdomain: 'cassandra', permalink: 'big-data'} }
@@ -715,6 +734,48 @@ describe Cequel::Metal::DataSet do
 
     it 'should use limit if specified' do
       expect(cequel[:posts].limit(2).count).to eq(2)
+    end
+  end
+
+  describe "columns with capital letters and periods" do
+    let(:now) { Time.now }
+    let(:post_fields) do
+      {
+        :"Blog_subdomain.column" => "blog_subdomain",
+        :"Permalink.column" => "permalink",
+        :"Title.column" => "title",
+        :"Body.column" => "body",
+        :"Published_at.column" => now,
+        :"Categories.column" => ["category1", "category2"],
+        :"Tags.column" => Set["tag1", "tag2"],
+        :"Trackbacks.column" => {now => 'www.google.com'}
+      }
+    end
+    let(:post_activity_fields) do
+      {
+        :"Blog_subdomain.column" => "blog_subdomain",
+        :"Permalink.column" => "permalink",
+        :"Visits.column" => 5,
+        :"Tweets.column" => 5
+      }
+    end
+
+    it 'should insert when columns have capital letters and periods' do
+     cequel[:legacy_posts].insert(fields)
+      expect(cequel[:legacy_posts].where(:"Blog_subdomain.column" => "blog_subdomain").first).
+        to eq fields.stringify_keys
+    end
+
+    it 'should increment' do
+     cequel[:legacy_post_activity].insert(post_activity_fields)
+      cequel[:post_activity].
+        where(row_keys).
+        increment(:"Visits.column" => 1, :"Tweets.column" => 2)
+
+      row = cequel[:post_activity].where(:"Blog_subdomain.column" => "blog_subdomain").first
+
+      expect(row[:"Visits.column"]).to eq(6)
+      expect(row[:"Tweets.column"]).to eq(7)
     end
   end
 
