@@ -164,7 +164,7 @@ module Cequel
 
       # @private
       def clustering_order_cql
-        "#{@name} #{@clustering_order}"
+        "\"#{@name}\" #{@clustering_order}"
       end
     end
 
