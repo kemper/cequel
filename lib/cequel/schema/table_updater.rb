@@ -100,7 +100,7 @@ module Cequel
       #   Altering column types is not recommended.
       #
       def change_column(name, type)
-        alter_table("ALTER #{name} TYPE #{type(type).cql_name}")
+        alter_table("ALTER \"#{name}\" TYPE #{type(type).cql_name}")
       end
 
       #
