@@ -45,7 +45,7 @@ module Cequel
       # @see DataSet#list_prepend
       #
       def list_prepend(column, elements)
-        statements << "#{column} = [?] + #{column}"
+        statements << "\"#{column}\" = [?] + \"#{column}\""
         bind_vars << elements
       end
 

@@ -605,7 +605,7 @@ module Cequel
       # @return [String] CQL `SELECT` statement encoding this data set's scope.
       #
       def cql
-        statement = Statement.new
+        Statement.new
           .append(select_cql)
           .append(" FROM #{table_name}")
           .append(*row_specifications_cql)
