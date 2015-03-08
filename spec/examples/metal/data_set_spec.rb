@@ -19,36 +19,17 @@ describe Cequel::Metal::DataSet do
       column :visits, :counter
       column :tweets, :counter
     end
-    cequel.schema.create_table(:legacy_posts) do
-      key :"Blog_subdomain.column", :text
-      key :"Permalink.column", :text
-      column :"Title.column", :text
-      column :"Body.column", :text
-      column :"Published_at.column", :timestamp
-      list :"Categories.column", :text
-      set :"Tags.column", :text
-      map :"Trackbacks.column", :timestamp, :text
-    end
-    cequel.schema.create_table(:legacy_post_activity) do
-      key :"Blog_subdomain.column", :text
-      key :"Permalink.column", :text
-      column :"Visits.column", :counter
-      column :"Tweets.column", :counter
-    end
   end
 
   after :each do
     subdomains = cequel[:posts].select(:blog_subdomain).
       map { |row| row[:blog_subdomain] }
     cequel[:posts].where(blog_subdomain: subdomains).delete if subdomains.any?
-    cequel[:legacy_posts].where(:"Blog_subdomain.column" => "blog_subdomain").delete
-    cequel[:legacy_post_activity].where(:"Blog_subdomain.column" => "blog_subdomain").delete
   end
 
   after :all do
     cequel.schema.drop_table(:posts)
     cequel.schema.drop_table(:post_activity)
-    cequel.schema.drop_table(:legacy_posts)
   end
 
   let(:row_keys) { {blog_subdomain: 'cassandra', permalink: 'big-data'} }
@@ -738,44 +719,104 @@ describe Cequel::Metal::DataSet do
   end
 
   describe "columns with capital letters and periods" do
+    before :each do
+      cequel.schema.create_table(:legacy_posts) do
+        key :"Blog_subdomain.column", :text
+        key :"Permalink.column", :text
+        column :"Title.column", :text
+        column :"Body.column", :text
+        column :"Published_at.column", :timestamp
+        list :"Categories.column", :text
+        set :"Tags.column", :text
+        map :"Trackbacks.column", :timestamp, :text
+      end
+      cequel.schema.create_table(:legacy_post_activity) do
+        key :"Blog_subdomain.column", :text
+        key :"Permalink.column", :text
+        column :"Visits.column", :counter
+        column :"Tweets.column", :counter
+      end
+    end
+
+    after :each do
+      cequel.schema.drop_table(:legacy_posts)
+      cequel.schema.drop_table(:legacy_post_activity)
+    end
+
     let(:now) { Time.now }
-    let(:post_fields) do
+    let(:epoch) { Time.at(0) }
+
+    let(:row_keys) do
       {
         :"Blog_subdomain.column" => "blog_subdomain",
         :"Permalink.column" => "permalink",
+      }
+    end
+
+    let(:post_fields) do
+      row_keys.merge({
         :"Title.column" => "title",
         :"Body.column" => "body",
         :"Published_at.column" => now,
         :"Categories.column" => ["category1", "category2"],
         :"Tags.column" => Set["tag1", "tag2"],
         :"Trackbacks.column" => {now => 'www.google.com'}
+      })
+    end
+
+    let(:non_key_update_fields) do
+      {
+        :"Title.column" => "title updated",
+        :"Body.column" => "body updated",
+        :"Published_at.column" => epoch,
+        :"Categories.column" => ["category1 updated", "category2"],
+        :"Tags.column" => Set["tag1 updated", "tag2"],
+        :"Trackbacks.column" => {epoch => 'www.google.com'}
       }
     end
+
+    let(:post_fields_updated) do
+      row_keys.merge(non_key_update_fields)
+    end
+
     let(:post_activity_fields) do
-      {
-        :"Blog_subdomain.column" => "blog_subdomain",
-        :"Permalink.column" => "permalink",
+      row_keys.merge({
         :"Visits.column" => 5,
         :"Tweets.column" => 5
-      }
+      })
     end
 
     it 'should insert when columns have capital letters and periods' do
-     cequel[:legacy_posts].insert(fields)
-      expect(cequel[:legacy_posts].where(:"Blog_subdomain.column" => "blog_subdomain").first).
-        to eq fields.stringify_keys
+      cequel[:legacy_posts].insert(post_fields)
+      row = cequel[:legacy_posts].where(row_keys).first
+      expect(
+        row.each_with_object({}) {|(k,v), hash| hash[k.to_s] = v.inspect}
+      ).to eq(
+        post_fields.each_with_object({}) {|(k,v), hash| hash[k.to_s] = v.inspect}
+      )
+    end
+
+    it "should update" do
+      cequel[:legacy_posts].where(row_keys).
+        update(non_key_update_fields)
+
+      row = cequel[:legacy_posts].where(row_keys).first
+      expect(
+        row.each_with_object({}) {|(k,v), hash| hash[k.to_s] = v.inspect}
+      ).to eq(
+        post_fields_updated.each_with_object({}) {|(k,v), hash| hash[k.to_s] = v.inspect}
+      )
     end
 
     it 'should increment' do
-     cequel[:legacy_post_activity].insert(post_activity_fields)
-      cequel[:post_activity].
+      cequel[:legacy_post_activity].
         where(row_keys).
         increment(:"Visits.column" => 1, :"Tweets.column" => 2)
 
-      row = cequel[:post_activity].where(:"Blog_subdomain.column" => "blog_subdomain").first
+      row = cequel[:legacy_post_activity].where(row_keys).first
 
-      expect(row[:"Visits.column"]).to eq(6)
-      expect(row[:"Tweets.column"]).to eq(7)
+      expect(row[:"Visits.column"]).to eq(1)
+      expect(row[:"Tweets.column"]).to eq(2)
     end
   end
 
